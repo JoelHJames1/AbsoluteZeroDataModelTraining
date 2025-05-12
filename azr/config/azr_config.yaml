@@ -1,0 +1,52 @@
+# AZR Configuration File
+# Author: Joel Hernandez James
+# Current Date: 2025-05-11
+
+# Model Configuration
+model_id: "Qwen/Qwen1.5-4B"  # Model ID from Hugging Face or local path
+quantization:
+  load_in_4bit: true
+  bnb_4bit_compute_dtype: "float16"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_quant_type: "nf4"
+
+# Training Configuration
+learning_rate: 1.0e-6
+batch_size: 2
+gradient_accumulation_steps: 4
+max_steps: 100000
+checkpoint_interval: 100
+evaluation_interval: 500
+ppo_update_interval: 10
+early_stopping: true
+target_kl: 0.1
+kl_penalty: "kl"
+weight_decay: 0.01
+warmup_steps: 100
+task_buffer_size: 1000
+
+# Task Generation
+task_types:
+  - "deduction"
+  - "abduction"
+  - "induction"
+initial_difficulty: 0.1
+final_difficulty: 0.9
+difficulty_schedule: "linear"  # linear, exponential, or step
+
+# Evaluation
+evaluation:
+  benchmarks:
+    - "humaneval"
+    - "mbpp"
+    - "apps"
+  num_samples: 1
+  max_tasks_per_benchmark: 50
+
+# Logging and Tracking
+wandb_project: "azr-training"
+wandb_entity: null  # Set to your W&B username or organization
+log_level: "INFO"
+
+# System
+seed: 42
