@@ -184,17 +184,17 @@ class AZRTrainer:
             # Apply LoRA to model
             self.model = get_peft_model(self.model, peft_config)
             
-            # Configure PPO
+            # Configure PPO with minimal parameters to avoid compatibility issues
             ppo_config = PPOConfig(
                 learning_rate=self.config['learning_rate'],
                 batch_size=self.config['batch_size'],
                 mini_batch_size=1,
-                gradient_accumulation_steps=self.config['gradient_accumulation_steps'],
-                # Removed optimize_cuda_cache as it's not supported in this version
-                early_stopping=self.config.get('early_stopping', True),
-                target_kl=self.config.get('target_kl', 0.1),
-                kl_penalty=self.config.get('kl_penalty', "kl"),
-                seed=self.config.get('seed', 42)
+                gradient_accumulation_steps=self.config['gradient_accumulation_steps']
+                # Removed potentially unsupported parameters:
+                # - optimize_cuda_cache
+                # - early_stopping
+                # - target_kl
+                # - kl_penalty
             )
             
             # Initialize PPO trainer
