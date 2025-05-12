@@ -190,7 +190,7 @@ class AZRTrainer:
                 batch_size=self.config['batch_size'],
                 mini_batch_size=1,
                 gradient_accumulation_steps=self.config['gradient_accumulation_steps'],
-                optimize_cuda_cache=True,
+                # Removed optimize_cuda_cache as it's not supported in this version
                 early_stopping=self.config.get('early_stopping', True),
                 target_kl=self.config.get('target_kl', 0.1),
                 kl_penalty=self.config.get('kl_penalty', "kl"),
