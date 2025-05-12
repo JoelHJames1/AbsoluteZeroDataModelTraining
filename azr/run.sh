@@ -77,6 +77,10 @@ CONFIG="config/azr_config.yaml"
 EVAL_ONLY=0
 BENCHMARK="humaneval"
 MAX_TASKS=0
+DASHBOARD=0
+DASHBOARD_ONLY=0
+DASHBOARD_PORT=8080
+TRAINING_PORT=8081
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -105,9 +109,27 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
+        --dashboard)
+            DASHBOARD=1
+            shift
+            ;;
+        --dashboard-only)
+            DASHBOARD_ONLY=1
+            shift
+            ;;
+        --dashboard-port)
+            DASHBOARD_PORT="$2"
+            shift
+            shift
+            ;;
+        --training-port)
+            TRAINING_PORT="$2"
+            shift
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: ./run.sh [--resume CHECKPOINT] [--config CONFIG_PATH] [--eval-only] [--benchmark BENCHMARK] [--max-tasks N]"
+            echo "Usage: ./run.sh [--resume CHECKPOINT] [--config CONFIG_PATH] [--eval-only] [--benchmark BENCHMARK] [--max-tasks N] [--dashboard] [--dashboard-only] [--dashboard-port PORT] [--training-port PORT]"
             exit 1
             ;;
     esac
@@ -128,6 +150,32 @@ LOG_FILE="$LOG_DIR/azr_$(date +%Y%m%d_%H%M%S).log"
 
 echo "Logs will be saved to: $LOG_FILE"
 echo ""
+
+# Function to start the dashboard server
+start_dashboard() {
+    echo "Starting AZR Dashboard on port $DASHBOARD_PORT..."
+    cd dashboard
+    python server.py --port $DASHBOARD_PORT &
+    DASHBOARD_PID=$!
+    cd ..
+    echo "Dashboard server started with PID: $DASHBOARD_PID"
+    echo "Open your browser at: http://localhost:$DASHBOARD_PORT"
+    
+    # Register cleanup handler
+    trap "kill $DASHBOARD_PID 2>/dev/null" EXIT
+}
+
+# Run dashboard only if requested
+if [ $DASHBOARD_ONLY -eq 1 ]; then
+    echo "Running in dashboard-only mode..."
+    start_dashboard
+    echo "Dashboard is running. Press Ctrl+C to stop."
+    # Keep script running
+    while true; do
+        sleep 1
+    done
+    exit 0
+fi
 
 # Run in evaluation mode if requested
 if [ $EVAL_ONLY -eq 1 ]; then
@@ -154,17 +202,22 @@ if [ $EVAL_ONLY -eq 1 ]; then
     exit 0
 fi
 
+# Start dashboard if requested
+if [ $DASHBOARD -eq 1 ]; then
+    start_dashboard
+fi
+
 # Run training
 echo "Starting AZR training..."
 
 if [ -n "$RESUME" ]; then
     echo "Resuming from checkpoint: $RESUME"
     cd scripts
-    python train.py --config "../$CONFIG" --resume "../$RESUME" | tee -a "../$LOG_FILE"
+    python train.py --config "../$CONFIG" --resume "../$RESUME" --dashboard-port $TRAINING_PORT | tee -a "../$LOG_FILE"
 else
     echo "Starting new training run"
     cd scripts
-    python train.py --config "../$CONFIG" | tee -a "../$LOG_FILE"
+    python train.py --config "../$CONFIG" --dashboard-port $TRAINING_PORT | tee -a "../$LOG_FILE"
 fi
 
 echo ""

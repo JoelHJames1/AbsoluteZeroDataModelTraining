@@ -43,6 +43,32 @@ evaluation:
   num_samples: 1
   max_tasks_per_benchmark: 50
 
+# Benchmark Targets
+# Based on latest model rankings (2025-05-11)
+benchmark_targets:
+  humaneval:
+    gpt35: 76.71  # o3 High (OpenAI)
+    codellama: 74.98  # DeepSeek R1
+    claude2: 73.19  # Claude 3.7 Sonnet Thinking
+    target: 80.00  # Target for AZR
+  mbpp:
+    gpt35: 76.71  # o3 High (OpenAI)
+    codellama: 74.98  # DeepSeek R1
+    claude2: 73.19  # Claude 3.7 Sonnet Thinking
+    target: 80.00  # Target for AZR
+  apps:
+    gpt35: 76.71  # o3 High (OpenAI)
+    codellama: 74.98  # DeepSeek R1
+    claude2: 73.19  # Claude 3.7 Sonnet Thinking
+    target: 80.00  # Target for AZR
+
+# Dashboard Configuration
+dashboard:
+  enabled: true
+  port: 8080
+  training_data_port: 8081
+  update_interval: 1.0  # seconds
+
 # Logging and Tracking
 wandb_project: "azr-training"
 wandb_entity: null  # Set to your W&B username or organization

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AZR Training Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>Absolute Zero Reasoner (AZR)</h1>
+            <div class="badges">
+                <span class="badge model">Qwen3-4B</span>
+                <span class="badge training">Self-Play</span>
+                <span class="badge optimization">4-bit</span>
+                <span class="badge platform">Apple Silicon</span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="status-panel">
+                <div class="status-card">
+                    <h2>Training Status</h2>
+                    <div class="status-indicator active">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Active</span>
+                    </div>
+                    <div class="status-details">
+                        <div class="detail">
+                            <span class="label">Current Step:</span>
+                            <span class="value" id="current-step">0</span>
+                        </div>
+                        <div class="detail">
+                            <span class="label">Elapsed Time:</span>
+                            <span class="value" id="elapsed-time">00:00:00</span>
+                        </div>
+                        <div class="detail">
+                            <span class="label">Current Task Type:</span>
+                            <span class="value" id="current-task-type">Deduction</span>
+                        </div>
+                        <div class="detail">
+                            <span class="label">Task Difficulty:</span>
+                            <span class="value" id="task-difficulty">0.1</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-card">
+                    <h2>Performance Metrics</h2>
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value" id="success-rate">0%</div>
+                            <div class="metric-label">Success Rate</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value" id="avg-reward">0.0</div>
+                            <div class="metric-label">Avg. Reward</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value" id="tasks-solved">0</div>
+                            <div class="metric-label">Tasks Solved</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value" id="buffer-size">0</div>
+                            <div class="metric-label">Buffer Size</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="charts-panel">
+                <div class="chart-card">
+                    <h2>Training Progress</h2>
+                    <canvas id="training-progress-chart"></canvas>
+                </div>
+                
+                <div class="chart-card">
+                    <h2>Benchmark Comparison</h2>
+                    <canvas id="benchmark-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="recent-tasks-panel">
+                <h2>Recent Tasks</h2>
+                <div class="task-list" id="recent-tasks">
+                    <div class="task-item placeholder">
+                        <div class="task-header">
+                            <span class="task-id">Task #1</span>
+                            <span class="task-type">Deduction</span>
+                            <span class="task-difficulty">Difficulty: 0.1</span>
+                            <span class="task-status success">Solved</span>
+                        </div>
+                        <div class="task-description">
+                            Write a Python function that calculates the factorial of a number.
+                        </div>
+                    </div>
+                    <div class="task-item placeholder">
+                        <div class="task-header">
+                            <span class="task-id">Task #2</span>
+                            <span class="task-type">Induction</span>
+                            <span class="task-difficulty">Difficulty: 0.15</span>
+                            <span class="task-status failure">Failed</span>
+                        </div>
+                        <div class="task-description">
+                            Write a function that generalizes the pattern: 1,3,6,10,15 for any sequence.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="benchmark-milestone-panel">
+            <h2>Benchmark Milestones</h2>
+            <div class="milestones">
+                <div class="milestone">
+                    <div class="milestone-header">
+                        <span class="milestone-name">HumanEval</span>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="humaneval-progress" style="width: 0%"></div>
+                            <span class="progress-text" id="humaneval-progress-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="milestone-targets">
+                        <div class="target" id="humaneval-target-1">
+                            <span class="target-label">GPT-3.5 (48.1%)</span>
+                            <span class="target-marker" style="left: 48.1%"></span>
+                        </div>
+                        <div class="target" id="humaneval-target-2">
+                            <span class="target-label">CodeLlama (53.7%)</span>
+                            <span class="target-marker" style="left: 53.7%"></span>
+                        </div>
+                        <div class="target" id="humaneval-target-3">
+                            <span class="target-label">Claude 2 (56.0%)</span>
+                            <span class="target-marker" style="left: 56.0%"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="milestone">
+                    <div class="milestone-header">
+                        <span class="milestone-name">MBPP</span>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="mbpp-progress" style="width: 0%"></div>
+                            <span class="progress-text" id="mbpp-progress-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="milestone-targets">
+                        <div class="target" id="mbpp-target-1">
+                            <span class="target-label">GPT-3.5 (52.3%)</span>
+                            <span class="target-marker" style="left: 52.3%"></span>
+                        </div>
+                        <div class="target" id="mbpp-target-2">
+                            <span class="target-label">CodeLlama (57.2%)</span>
+                            <span class="target-marker" style="left: 57.2%"></span>
+                        </div>
+                        <div class="target" id="mbpp-target-3">
+                            <span class="target-label">Claude 2 (61.5%)</span>
+                            <span class="target-marker" style="left: 61.5%"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="milestone">
+                    <div class="milestone-header">
+                        <span class="milestone-name">APPS</span>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="apps-progress" style="width: 0%"></div>
+                            <span class="progress-text" id="apps-progress-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="milestone-targets">
+                        <div class="target" id="apps-target-1">
+                            <span class="target-label">GPT-3.5 (27.5%)</span>
+                            <span class="target-marker" style="left: 27.5%"></span>
+                        </div>
+                        <div class="target" id="apps-target-2">
+                            <span class="target-label">CodeLlama (31.2%)</span>
+                            <span class="target-marker" style="left: 31.2%"></span>
+                        </div>
+                        <div class="target" id="apps-target-3">
+                            <span class="target-label">Claude 2 (33.8%)</span>
+                            <span class="target-marker" style="left: 33.8%"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
