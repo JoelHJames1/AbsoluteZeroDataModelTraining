@@ -1,0 +1,362 @@
+/* 
+ * Author: Joel Hernandez James  
+ * Current Date: 2025-05-11  
+ * File: App.css
+ *
+ * Description:  
+ * Styles for the main App component and layout
+ */
+
+/* App container */
+.app-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Main content layout */
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px;
+}
+
+.left-panel, .right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Card styles */
+.card {
+  background-color: var(--card-background);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  transition: var(--transition);
+}
+
+.card:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-3px);
+}
+
+.card-title {
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+/* Status indicator */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.status-indicator.active .status-dot {
+  background-color: var(--success-color);
+  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.3);
+  animation: pulse 1.5s infinite;
+}
+
+.status-indicator.paused .status-dot {
+  background-color: var(--warning-color);
+}
+
+.status-indicator.error .status-dot {
+  background-color: var(--danger-color);
+}
+
+.status-text {
+  font-weight: 600;
+}
+
+.status-indicator.active .status-text {
+  color: var(--success-color);
+}
+
+.status-indicator.paused .status-text {
+  color: var(--warning-color);
+}
+
+.status-indicator.error .status-text {
+  color: var(--danger-color);
+}
+
+/* Status details */
+.status-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Metrics */
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.metric {
+  text-align: center;
+  padding: 15px;
+  background-color: var(--light-color);
+  border-radius: var(--border-radius);
+}
+
+.metric-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin-bottom: 5px;
+}
+
+.metric-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Charts */
+.chart-container {
+  height: 300px;
+  width: 100%;
+}
+
+/* Task list */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.task-item {
+  background-color: var(--light-color);
+  border-radius: var(--border-radius);
+  padding: 15px;
+  border-left: 4px solid var(--primary-color);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+}
+
+.task-item.new-task {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeIn 0.5s forwards;
+}
+
+.task-item.removing {
+  opacity: 1;
+  transform: translateX(0);
+  animation: fadeOut 0.5s forwards;
+}
+
+.task-item.expanded .task-details {
+  max-height: 300px;
+  opacity: 1;
+  padding-top: 15px;
+  margin-top: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+.task-details {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.task-id {
+  font-weight: 600;
+}
+
+.task-type, .task-difficulty {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.task-status {
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.task-status.success {
+  background-color: rgba(40, 167, 69, 0.2);
+  color: var(--success-color);
+}
+
+.task-status.failure {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: var(--danger-color);
+}
+
+.task-description {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.code-preview {
+  background-color: var(--card-background);
+  border-radius: var(--border-radius);
+  padding: 10px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+
+.code-preview pre {
+  margin: 0;
+}
+
+.code-preview code {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9rem;
+  color: var(--primary-color);
+}
+
+/* Benchmark milestones */
+.milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.milestone {
+  margin-bottom: 10px;
+}
+
+.milestone-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.milestone-name {
+  width: 100px;
+  font-weight: 600;
+}
+
+.progress-container {
+  flex: 1;
+  height: 24px;
+  background-color: var(--light-color);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--primary-color);
+  border-radius: 12px;
+  transition: width 0.5s ease, background-color 0.5s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: shimmer 2s infinite;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-weight: 600;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.milestone-targets {
+  position: relative;
+  height: 30px;
+  margin-left: 100px;
+}
+
+.target {
+  position: relative;
+  margin-bottom: 5px;
+}
+
+.target-marker {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 10px;
+  background-color: var(--dark-color);
+}
+
+.target-label {
+  position: absolute;
+  top: 12px;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .status-details, .metrics {
+    grid-template-columns: 1fr;
+  }
+}

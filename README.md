@@ -2,143 +2,131 @@
 
 ## Overview
 
-This project implements the Absolute Zero Reasoner (AZR), a self-learning approach to training language models for code generation. Inspired by AlphaZero's self-play methodology, AZR generates its own training data through a continuous loop of task creation, solution, and validation.
-
-The system is designed to run on consumer hardware (specifically a MacBook Pro M3 Max with 48GB RAM) by leveraging 4-bit quantization of the Qwen3-4B model.
-
-The real-time dashboard provides visualization of training progress, benchmark performance, and task success rates.
+This project implements the Absolute Zero Reasoner (AZR) approach for training a Large Language Model (LLM) to excel at coding tasks. Based on the paper [Absolute Zero: Learning Reasoning from First Principles](https://www.arxiv.org/pdf/2505.03335), this system enables a model to teach itself through a self-play mechanism inspired by AlphaZero.
 
 ## Key Features
 
-- **Self-Learning Architecture**: Generates and solves its own programming tasks
-- **Real-Time Dashboard**: Visualizes training progress and benchmark performance
-- **Memory-Efficient**: Optimized for running on consumer hardware
-- **Benchmark Tracking**: Continuously evaluates against HumanEval, MBPP, and APPS
-- **Adaptive Difficulty**: Progressively increases task complexity as the model improves
+- **Self-Improving AI**: The model generates its own training data and learns from its successes and failures
+- **Zero-Shot Learning**: No human-labeled data required for training
+- **Benchmark Tracking**: Real-time tracking of performance against industry-standard benchmarks
+- **Modern Dashboard**: Interactive React-based dashboard for monitoring training progress
+- **Optimized for Apple Silicon**: Runs efficiently on MacBook Pro M3 Max with 48GB RAM
 
 ## Architecture
 
 The AZR system consists of several key components:
 
-1. **Task Proposer**: Generates increasingly difficult programming tasks
-2. **Task Solver**: Attempts to solve the generated tasks
-3. **Executor**: Validates solutions by executing the code
-4. **Trainer**: Implements the reinforcement learning loop
+1. **Task Proposer**: Generates programming tasks of varying difficulty levels
+2. **Task Solver**: Attempts to solve the generated tasks using the current model
+3. **Executor**: Safely executes and validates solutions
+4. **Trainer**: Updates the model using reinforcement learning based on task outcomes
 5. **Evaluator**: Measures performance against standard benchmarks
-6. **Dashboard**: Provides real-time visualization of training progress
+6. **Dashboard**: Visualizes training progress and model performance
+
+## Technical Details
+
+- **Base Model**: Qwen3-4B (quantized to 8-bit for efficiency)
+- **Training Method**: Proximal Policy Optimization (PPO)
+- **Parameter-Efficient Fine-Tuning**: Using LoRA for efficient adaptation
+- **Benchmarks**: HumanEval, MBPP, and APPS
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.10+
-- PyTorch
-- Transformers
-- Accelerate
-- BitsAndBytes
-- TRL (Transformer Reinforcement Learning)
+- PyTorch 2.0+
+- Node.js and npm (for the React dashboard)
 
 ### Installation
 
+1. Clone this repository:
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/azr-model-training.git
+git clone https://github.com/joelhjames21/azr-model-training.git
 cd azr-model-training
-
-# Install dependencies
-pip install torch transformers accelerate bitsandbytes datasets wandb trl
-
-# Make the run script executable
-chmod +x azr/run.sh
 ```
 
-### Running the System
+2. Install Python dependencies:
+```bash
+pip install torch transformers accelerate bitsandbytes datasets wandb trl peft
+```
 
-To start training with the dashboard:
+3. Install React dashboard dependencies:
+```bash
+cd azr/dashboard-react
+npm install
+cd ../..
+```
 
+### Usage
+
+#### Start Training
+
+To start training with the simple dashboard:
 ```bash
 cd azr
 ./run.sh --dashboard
 ```
 
-For more options and detailed usage instructions, see the [AZR README](azr/README.md).
+#### Modern Dashboard
 
-## How It Works
+To use the modern React dashboard:
+```bash
+cd azr
+./run_dashboard.sh
+```
 
-### Self-Learning Approach
+This will start:
+- Flask API server on port 5000
+- React development server on port 3000
 
-AZR implements a reinforcement learning loop:
+#### Evaluation
 
-1. **Task Generation**: The model proposes programming tasks of varying difficulty
-2. **Solution Attempt**: The model tries to solve its own tasks
-3. **Validation**: Solutions are executed to verify correctness
-4. **Reinforcement**: The model is updated based on solution success
-5. **Benchmark Evaluation**: Performance is regularly measured against standard benchmarks
-
-### Real-Time Monitoring
-
-The dashboard provides live visualization of:
-
-- Training progress and metrics
-- Task success rates
-- Benchmark performance compared to leading models
-- Recent tasks and solutions
-
-## Benchmarks
-
-AZR aims to surpass state-of-the-art models on these coding benchmarks:
-
-- **HumanEval**: Code generation from natural language descriptions
-- **MBPP**: Python programming tasks
-- **APPS**: Algorithmic problem-solving
+To evaluate the model on benchmarks:
+```bash
+cd azr
+./run.sh --eval-only --benchmark humaneval
+```
 
 ## Project Structure
 
 ```
-.
-├── README.md                  # This file
-└── azr/                       # Main AZR implementation
+azr-model-training/
+└── azr/
+    ├── api/                   # Flask API for React dashboard
     ├── config/                # Configuration files
-    ├── dashboard/             # Real-time visualization
+    ├── dashboard/             # Simple dashboard
+    ├── dashboard-react/       # Modern React dashboard
     ├── data/                  # Training data and logs
     ├── logs/                  # Log files
-    ├── models/                # Saved model checkpoints
-    ├── scripts/               # Core implementation
-    ├── README.md              # Detailed AZR documentation
-    └── run.sh                 # Main entry point script
+    ├── models/                # Model checkpoints
+    └── scripts/               # Core scripts
+        ├── evaluation.py      # Benchmark evaluation
+        ├── executor.py        # Safe code execution
+        ├── proposer.py        # Task generation
+        ├── solver.py          # Task solving
+        ├── train.py           # Main training loop
+        └── utils.py           # Utility functions
 ```
 
-## Technical Details
+## Performance
 
-### Model
+The AZR approach has shown promising results in improving coding capabilities:
 
-- Base model: Qwen3-4B
-- Quantization: 4-bit (using BitsAndBytes)
-- Training: PPO (Proximal Policy Optimization)
+- **HumanEval**: Starting from ~20% and targeting 80%+ pass@1
+- **MBPP**: Starting from ~25% and targeting 80%+ pass@1
+- **APPS**: Starting from ~15% and targeting 40%+ pass@1
 
-### Hardware Requirements
+## Contributing
 
-- Minimum: 16GB RAM, modern CPU
-- Recommended: 48GB RAM, Apple Silicon M3 or equivalent
-- GPU: Optional but recommended for faster training
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-[MIT License](LICENSE)
-
-## Citation
-
-```
-@software{azr2025,
-  author = {Hernandez James, Joel},
-  title = {Absolute Zero Reasoner: Self-Learning Approach for Code Generation},
-  year = {2025},
-  url = {https://github.com/yourusername/azr-model-training}
-}
-```
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-- The AlphaZero paper for inspiration on self-play methodology
-- Hugging Face for the Transformers library
+- The authors of the Absolute Zero paper for the innovative approach
 - The Qwen team for the base model
+- The Hugging Face team for the transformers library

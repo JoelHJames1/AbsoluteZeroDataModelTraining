@@ -1,120 +1,71 @@
 #!/bin/bash
-# Author: Joel Hernandez James
-# Current Date: 2025-05-11
-# Description: Script to run the AZR training system
+# Author: Joel Hernandez James  
+# Current Date: 2025-05-11  
+# Script: run.sh
 
-# Set up environment
-set -e  # Exit on error
+# Description:  
+# Main entry point script for the AZR system
 
-# Display banner
+# Print header
 echo "======================================================"
 echo "  Absolute Zero Reasoner (AZR) Training System"
 echo "  Author: Joel Hernandez James"
-echo "  Date: 2025-05-11"
+echo "  Date: $(date +%Y-%m-%d)"
 echo "======================================================"
 echo ""
 
-# Check for Python 3.10+
-python_version=$(python3 --version | cut -d' ' -f2)
-python_major=$(echo $python_version | cut -d'.' -f1)
-python_minor=$(echo $python_version | cut -d'.' -f2)
+# Check Python version
+PYTHON_VERSION=$(python --version 2>&1 | awk '{print $2}')
+echo "Python version: $PYTHON_VERSION ✓"
 
-if [ "$python_major" -lt 3 ] || ([ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]); then
-    echo "Error: Python 3.10 or higher is required (found $python_version)"
-    echo "Please install Python 3.10+ and try again"
-    exit 1
-fi
-
-echo "Python version: $python_version ✓"
-
-# Check for required dependencies
+# Check dependencies
 echo "Checking dependencies..."
-
-# Function to check if a Python package is installed
-check_package() {
-    python3 -c "import $1" 2>/dev/null
-    if [ $? -eq 0 ]; then
-        echo "  $1 ✓"
+pip_install_if_missing() {
+    if ! python -c "import $1" &> /dev/null; then
+        echo "  $1 ✗ (installing...)"
+        pip install $2
     else
-        echo "  $1 ✗ (missing)"
-        missing_deps=1
+        echo "  $1 ✓"
     fi
 }
 
-missing_deps=0
-check_package torch
-check_package transformers
-check_package accelerate
-check_package bitsandbytes
-check_package datasets
-check_package wandb
-check_package trl
-check_package yaml
-check_package tqdm
-
-if [ $missing_deps -eq 1 ]; then
-    echo ""
-    echo "Some dependencies are missing. Install them with:"
-    echo "pip install torch transformers accelerate bitsandbytes datasets wandb trl pyyaml tqdm"
-    
-    read -p "Would you like to install the missing dependencies now? (y/n) " -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        pip install torch transformers accelerate bitsandbytes datasets wandb trl pyyaml tqdm
-    else
-        echo "Please install the missing dependencies and try again."
-        exit 1
-    fi
-fi
+pip_install_if_missing "torch" "torch"
+pip_install_if_missing "transformers" "transformers"
+pip_install_if_missing "accelerate" "accelerate"
+pip_install_if_missing "bitsandbytes" "bitsandbytes -U"
+pip_install_if_missing "datasets" "datasets"
+pip_install_if_missing "wandb" "wandb"
+pip_install_if_missing "trl" "trl"
+pip_install_if_missing "peft" "peft"
+pip_install_if_missing "yaml" "pyyaml"
 
 # Create necessary directories
-echo "Setting up directory structure..."
-mkdir -p data logs models
+mkdir -p logs data models
+
+# Force update bitsandbytes to latest version
+echo "Updating bitsandbytes to latest version..."
+pip install -U bitsandbytes
 
 # Parse command line arguments
-RESUME=""
-CONFIG="config/azr_config.yaml"
-EVAL_ONLY=0
-BENCHMARK="humaneval"
-MAX_TASKS=0
-DASHBOARD=0
-DASHBOARD_ONLY=0
+DASHBOARD=false
+DASHBOARD_ONLY=false
 DASHBOARD_PORT=8080
 TRAINING_PORT=8081
+EVAL_ONLY=false
+BENCHMARK=""
+MAX_TASKS=0
+CONFIG_PATH="config/azr_config.yaml"
+RESUME_PATH=""
 
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-        --resume)
-            RESUME="$2"
-            shift
-            shift
-            ;;
-        --config)
-            CONFIG="$2"
-            shift
-            shift
-            ;;
-        --eval-only)
-            EVAL_ONLY=1
-            shift
-            ;;
-        --benchmark)
-            BENCHMARK="$2"
-            shift
-            shift
-            ;;
-        --max-tasks)
-            MAX_TASKS="$2"
-            shift
-            shift
-            ;;
         --dashboard)
-            DASHBOARD=1
+            DASHBOARD=true
             shift
             ;;
         --dashboard-only)
-            DASHBOARD_ONLY=1
+            DASHBOARD_ONLY=true
             shift
             ;;
         --dashboard-port)
@@ -127,102 +78,94 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
+        --eval-only)
+            EVAL_ONLY=true
+            shift
+            ;;
+        --benchmark)
+            BENCHMARK="$2"
+            shift
+            shift
+            ;;
+        --max-tasks)
+            MAX_TASKS="$2"
+            shift
+            shift
+            ;;
+        --config)
+            CONFIG_PATH="$2"
+            shift
+            shift
+            ;;
+        --resume)
+            RESUME_PATH="$2"
+            shift
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: ./run.sh [--resume CHECKPOINT] [--config CONFIG_PATH] [--eval-only] [--benchmark BENCHMARK] [--max-tasks N] [--dashboard] [--dashboard-only] [--dashboard-port PORT] [--training-port PORT]"
             exit 1
             ;;
     esac
 done
 
-# Check if config file exists
-if [ ! -f "$CONFIG" ]; then
-    echo "Error: Config file not found: $CONFIG"
-    exit 1
-fi
-
-echo "Using config file: $CONFIG"
-
-# Set up logging
-LOG_DIR="logs"
-mkdir -p $LOG_DIR
-LOG_FILE="$LOG_DIR/azr_$(date +%Y%m%d_%H%M%S).log"
-
-echo "Logs will be saved to: $LOG_FILE"
-echo ""
-
-# Function to start the dashboard server
-start_dashboard() {
-    echo "Starting AZR Dashboard on port $DASHBOARD_PORT..."
-    cd dashboard
-    python server.py --port $DASHBOARD_PORT &
-    DASHBOARD_PID=$!
-    cd ..
-    echo "Dashboard server started with PID: $DASHBOARD_PID"
-    echo "Open your browser at: http://localhost:$DASHBOARD_PORT"
-    
-    # Register cleanup handler
-    trap "kill $DASHBOARD_PID 2>/dev/null" EXIT
-}
-
-# Run dashboard only if requested
-if [ $DASHBOARD_ONLY -eq 1 ]; then
-    echo "Running in dashboard-only mode..."
-    start_dashboard
-    echo "Dashboard is running. Press Ctrl+C to stop."
-    # Keep script running
-    while true; do
-        sleep 1
-    done
-    exit 0
-fi
-
-# Run in evaluation mode if requested
-if [ $EVAL_ONLY -eq 1 ]; then
-    echo "Running in evaluation mode..."
-    echo "Benchmark: $BENCHMARK"
-    
-    if [ -z "$RESUME" ]; then
-        echo "Error: Model checkpoint must be specified with --resume when using --eval-only"
-        exit 1
-    fi
-    
-    MAX_TASKS_ARG=""
-    if [ $MAX_TASKS -gt 0 ]; then
-        MAX_TASKS_ARG="--max_tasks $MAX_TASKS"
-    fi
-    
-    echo "Evaluating model: $RESUME"
-    cd scripts
-    python evaluation.py --model_path "../$RESUME" --benchmark $BENCHMARK --config "../$CONFIG" $MAX_TASKS_ARG | tee -a "../$LOG_FILE"
-    cd ..
-    
-    echo ""
-    echo "Evaluation complete. Results saved to logs/evaluation_results.json"
-    exit 0
-fi
-
 # Start dashboard if requested
-if [ $DASHBOARD -eq 1 ]; then
-    start_dashboard
+if [ "$DASHBOARD" = true ] || [ "$DASHBOARD_ONLY" = true ]; then
+    echo "Starting dashboard server on port $DASHBOARD_PORT..."
+    python dashboard/server.py --port $DASHBOARD_PORT &
+    DASHBOARD_PID=$!
+    
+    # Wait for dashboard to start
+    sleep 2
+    echo "Dashboard running at http://localhost:$DASHBOARD_PORT"
+fi
+
+# Exit if dashboard-only mode
+if [ "$DASHBOARD_ONLY" = true ]; then
+    echo "Running in dashboard-only mode. Connect to a running training process."
+    wait $DASHBOARD_PID
+    exit 0
+fi
+
+# Run evaluation if requested
+if [ "$EVAL_ONLY" = true ]; then
+    echo "Running evaluation..."
+    EVAL_CMD="python scripts/evaluation.py"
+    
+    if [ ! -z "$RESUME_PATH" ]; then
+        EVAL_CMD="$EVAL_CMD --model $RESUME_PATH"
+    fi
+    
+    if [ ! -z "$BENCHMARK" ]; then
+        EVAL_CMD="$EVAL_CMD --benchmark $BENCHMARK"
+    fi
+    
+    if [ "$MAX_TASKS" -gt 0 ]; then
+        EVAL_CMD="$EVAL_CMD --max-tasks $MAX_TASKS"
+    fi
+    
+    $EVAL_CMD
+    exit 0
+fi
+
+# Start training
+echo "Starting AZR training..."
+TRAIN_CMD="python scripts/train.py"
+
+if [ ! -z "$CONFIG_PATH" ]; then
+    TRAIN_CMD="$TRAIN_CMD --config $CONFIG_PATH"
+fi
+
+if [ ! -z "$RESUME_PATH" ]; then
+    TRAIN_CMD="$TRAIN_CMD --resume $RESUME_PATH"
 fi
 
 # Run training
-echo "Starting AZR training..."
+$TRAIN_CMD
 
-if [ -n "$RESUME" ]; then
-    echo "Resuming from checkpoint: $RESUME"
-    cd scripts
-    python train.py --config "../$CONFIG" --resume "../$RESUME" --dashboard-port $TRAINING_PORT | tee -a "../$LOG_FILE"
-else
-    echo "Starting new training run"
-    cd scripts
-    python train.py --config "../$CONFIG" --dashboard-port $TRAINING_PORT | tee -a "../$LOG_FILE"
+# Clean up
+if [ "$DASHBOARD" = true ]; then
+    kill $DASHBOARD_PID
 fi
 
-echo ""
-echo "Training complete!"
-echo "Logs saved to: $LOG_FILE"
-echo ""
-echo "To evaluate the trained model, run:"
-echo "./run.sh --eval-only --resume models/checkpoint-XXXX --benchmark humaneval"
+echo "AZR training completed."

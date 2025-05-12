@@ -2,170 +2,124 @@
 
 ## Overview
 
-The Absolute Zero Reasoner (AZR) is a self-learning system that trains language models to excel at coding tasks through a reinforcement learning approach. Inspired by the AlphaZero methodology, AZR generates its own training data through self-play, continuously improving its performance on programming tasks.
+The Absolute Zero Reasoner (AZR) is a self-improving AI system that learns to solve programming tasks through a process inspired by AlphaZero. It uses a combination of self-play, reinforcement learning, and large language models to continuously improve its problem-solving abilities.
 
-This implementation uses the Qwen3-4B model with 4-bit quantization, optimized for running on Apple Silicon hardware with limited memory (48GB RAM).
+## Architecture
 
-## Key Features
+AZR follows the Absolute Zero approach described in the paper [Absolute Zero: Learning Reasoning from First Principles](https://www.arxiv.org/pdf/2505.03335). The system consists of the following components:
 
-- **Self-Play Training**: AZR generates its own programming tasks and solutions, creating a continuous learning loop
-- **Adaptive Difficulty**: Task difficulty increases as the model improves
-- **Real-Time Dashboard**: Monitor training progress, benchmark performance, and task success rates
-- **Benchmark Evaluation**: Regularly evaluates against standard coding benchmarks (HumanEval, MBPP, APPS)
-- **Memory-Efficient**: Uses 4-bit quantization to run efficiently on consumer hardware
-
-## System Architecture
-
-```
-azr/
-├── config/                # Configuration files
-│   └── azr_config.yaml    # Main configuration
-├── dashboard/             # Real-time training visualization
-│   ├── index.html         # Dashboard UI
-│   ├── styles.css         # Dashboard styling
-│   ├── dashboard.js       # Dashboard frontend logic
-│   └── server.py          # Dashboard backend server
-├── data/                  # Training data and logs
-├── logs/                  # Log files
-├── models/                # Saved model checkpoints
-├── scripts/               # Core implementation
-│   ├── executor.py        # Code execution and validation
-│   ├── proposer.py        # Task generation
-│   ├── solver.py          # Task solving
-│   ├── train.py           # Main training loop
-│   ├── evaluation.py      # Benchmark evaluation
-│   └── utils.py           # Utility functions
-└── run.sh                 # Main entry point script
-```
+- **Task Proposer**: Generates programming tasks of varying difficulty
+- **Task Solver**: Attempts to solve the generated tasks
+- **Executor**: Validates solutions by executing them in a safe environment
+- **Trainer**: Updates the model using reinforcement learning based on task outcomes
+- **Evaluator**: Measures performance against standard benchmarks
 
 ## Requirements
 
 - Python 3.10+
-- PyTorch
-- Transformers
+- PyTorch 2.0+
+- Transformers library
 - Accelerate
-- BitsAndBytes
-- TRL (Transformer Reinforcement Learning)
-- Datasets
-- Weights & Biases (optional for tracking)
+- BitsAndBytes (for quantization)
+- TRL (for reinforcement learning)
+- PEFT (for parameter-efficient fine-tuning)
 
-## Installation
+## Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/azr.git
-   cd azr
-   ```
+1. Install dependencies:
+```bash
+pip install torch transformers accelerate bitsandbytes datasets wandb trl peft
+```
 
-2. Install dependencies:
-   ```bash
-   pip install torch transformers accelerate bitsandbytes datasets wandb trl
-   ```
-
-3. Make the run script executable:
-   ```bash
-   chmod +x run.sh
-   ```
+2. Configure the system in `config/azr_config.yaml`
 
 ## Usage
 
-### Starting Training with Dashboard
+### Training
 
-To start training with the real-time dashboard:
+To start training the model:
+
+```bash
+./run.sh
+```
+
+Options:
+- `--config <path>`: Path to configuration file (default: `config/azr_config.yaml`)
+- `--resume <path>`: Path to checkpoint to resume from
+- `--dashboard`: Start the training dashboard
+- `--dashboard-port <port>`: Dashboard port (default: 8080)
+
+### Evaluation
+
+To evaluate the model on benchmarks:
+
+```bash
+./run.sh --eval-only --benchmark <benchmark_name>
+```
+
+Supported benchmarks:
+- `humaneval`: HumanEval benchmark for code generation
+- `mbpp`: MBPP benchmark for Python programming
+- `apps`: APPS benchmark for problem-solving
+
+### Dashboard
+
+AZR includes two dashboard options:
+
+#### 1. Simple Dashboard
+
+The simple dashboard is included in the main training script:
 
 ```bash
 ./run.sh --dashboard
 ```
 
-This will:
-1. Start the dashboard server on port 8080
-2. Start the training process with real-time data streaming
-3. Open the dashboard in your default browser
+#### 2. React Dashboard (Modern UI)
 
-### Dashboard-Only Mode
-
-To run just the dashboard (connecting to an already running training process):
+The React dashboard provides a more modern and interactive interface:
 
 ```bash
-./run.sh --dashboard-only
+./run_dashboard.sh
 ```
 
-### Training Options
+This will start:
+- Flask API server on port 5000
+- React development server on port 3000
 
-```bash
-./run.sh [OPTIONS]
+The React dashboard connects to the training process in real-time and displays:
+- Training status and metrics
+- Real-time task generation and solutions
+- Performance charts
+- Benchmark progress
 
-Options:
-  --resume CHECKPOINT      Resume training from a checkpoint
-  --config CONFIG_PATH     Use a custom configuration file
-  --dashboard              Enable the real-time dashboard
-  --dashboard-only         Run only the dashboard
-  --dashboard-port PORT    Set custom dashboard port (default: 8080)
-  --training-port PORT     Set custom training data port (default: 8081)
-  --eval-only              Run evaluation only
-  --benchmark BENCHMARK    Specify benchmark for evaluation
-  --max-tasks N            Limit number of tasks for evaluation
+## Project Structure
+
 ```
-
-### Evaluation
-
-To evaluate a trained model on benchmarks:
-
-```bash
-./run.sh --eval-only --resume models/checkpoint-XXXX --benchmark humaneval
+azr/
+├── api/                   # Flask API for React dashboard
+├── config/                # Configuration files
+├── dashboard/             # Simple dashboard
+├── dashboard-react/       # Modern React dashboard
+├── data/                  # Training data and logs
+├── logs/                  # Log files
+├── models/                # Model checkpoints
+└── scripts/               # Core scripts
+    ├── evaluation.py      # Benchmark evaluation
+    ├── executor.py        # Safe code execution
+    ├── proposer.py        # Task generation
+    ├── solver.py          # Task solving
+    ├── train.py           # Main training loop
+    └── utils.py           # Utility functions
 ```
 
 ## Benchmarks
 
-AZR tracks performance against these coding benchmarks:
+AZR tracks progress against the following benchmarks:
 
-- **HumanEval**: Evaluates code generation from natural language descriptions
-- **MBPP (Mostly Basic Python Programming)**: Tests Python programming skills
-- **APPS**: Assesses algorithmic problem-solving abilities
-
-The system aims to surpass state-of-the-art models like GPT-3.5, Claude, and CodeLlama.
-
-## Dashboard
-
-The real-time dashboard provides:
-
-- Training status and progress
-- Success rate and reward metrics
-- Task difficulty progression
-- Benchmark performance comparison
-- Recent tasks with solutions
-
-## Configuration
-
-Edit `config/azr_config.yaml` to customize:
-
-- Model parameters
-- Training hyperparameters
-- Task generation settings
-- Evaluation settings
-- Benchmark targets
-
-## How It Works
-
-1. **Task Generation**: The system generates programming tasks of increasing difficulty
-2. **Task Solving**: The model attempts to solve these tasks
-3. **Validation**: Solutions are executed and validated
-4. **Reinforcement Learning**: The model is updated based on solution success
-5. **Benchmark Evaluation**: Periodically evaluated against standard benchmarks
-6. **Visualization**: Progress is displayed on the real-time dashboard
+- **HumanEval**: Measures code generation capabilities
+- **MBPP**: Measures Python programming abilities
+- **APPS**: Measures problem-solving and algorithmic thinking
 
 ## License
 
-[MIT License](LICENSE)
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```
-@software{azr2025,
-  author = {Hernandez James, Joel},
-  title = {Absolute Zero Reasoner: Self-Learning Approach for Code Generation},
-  year = {2025},
-  url = {https://github.com/yourusername/azr}
-}
+This project is licensed under the MIT License - see the LICENSE file for details.

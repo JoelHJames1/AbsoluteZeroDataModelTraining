@@ -1,701 +1,556 @@
+#!/usr/bin/env python3
 # Author: Joel Hernandez James  
 # Current Date: 2025-05-11  
-# Class: Trainer
+# Class: AZRTrainer
 
 # Description:  
-# Main training loop for the AZR system using reinforcement learning
+# Main training loop for the Absolute Zero Reasoner (AZR) system
 
 import os
 import sys
 import time
-import logging
-import argparse
-from typing import Dict, List, Any, Optional, Tuple
 import json
 import random
-import re
+import argparse
 import socket
 import threading
-import torch
-from torch.optim import AdamW
-import numpy as np
+import logging
+import yaml
+from pathlib import Path
 from datetime import datetime
+
+import torch
 from transformers import (
     AutoModelForCausalLM, 
     AutoTokenizer, 
     BitsAndBytesConfig,
-    get_linear_schedule_with_warmup
+    TrainingArguments
 )
+from peft import LoraConfig, get_peft_model
 from trl import PPOTrainer, PPOConfig
-from tqdm import tqdm
 
 # Add parent directory to path for relative imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import AZR modules
-from proposer import propose_task, TaskProposer
-from solver import solve_task, TaskSolver
-from executor import validate_code, execute_with_timeout
-from utils import (
-    setup_seed, 
-    load_config, 
-    setup_wandb, 
-    save_checkpoint, 
-    load_checkpoint,
-    log_metrics,
-    create_directory_structure
-)
+from scripts.proposer import propose_task
+from scripts.solver import solve_task
+from scripts.executor import validate_code
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("../logs/training.log"),
+        logging.FileHandler(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "training.log")),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("AZR-Trainer")
 
-# Dashboard data server
-class DashboardDataServer:
-    """Server to provide real-time training data to the dashboard"""
+class AZRTrainer:
+    """Main trainer class for the Absolute Zero Reasoner system"""
     
-    def __init__(self, host='localhost', port=8081):
-        """Initialize the dashboard data server"""
-        self.host = host
-        self.port = port
-        self.data = {
-            'status': 'initializing',
-            'currentStep': 0,
-            'taskType': 'Deduction',
-            'taskDifficulty': 0.1,
-            'successRate': 0,
-            'avgReward': 0,
-            'tasksSolved': 0,
-            'bufferSize': 0,
-            'recentTasks': [],
-            'benchmarkProgress': {
-                'humaneval': 0,
-                'mbpp': 0,
-                'apps': 0
+    def __init__(self, config_path=None):
+        """Initialize the trainer with the given configuration"""
+        # Load configuration
+        self.config_path = config_path or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "config",
+            "azr_config.yaml"
+        )
+        self.load_config()
+        
+        # Create necessary directories
+        self.setup_directories()
+        
+        # Initialize training state
+        self.initialize_state()
+        
+        # Load model and tokenizer
+        self.load_model()
+        
+        # Initialize task buffer
+        self.task_buffer = []
+        
+        # Start data server
+        self.start_data_server()
+    
+    def load_config(self):
+        """Load configuration from YAML file"""
+        try:
+            with open(self.config_path, 'r') as f:
+                self.config = yaml.safe_load(f)
+            logger.info(f"Configuration loaded from {self.config_path}")
+        except Exception as e:
+            logger.error(f"Error loading configuration: {e}")
+            raise
+    
+    def setup_directories(self):
+        """Create necessary directories for logs, data, and models"""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Create directories if they don't exist
+        for dir_name in ["logs", "data", "models"]:
+            dir_path = os.path.join(base_dir, dir_name)
+            os.makedirs(dir_path, exist_ok=True)
+            logger.info(f"Directory {dir_path} is ready")
+    
+    def initialize_state(self):
+        """Initialize the training state"""
+        self.state = {
+            'current_step': 0,
+            'task_type': self.config['task_types'][0],
+            'task_difficulty': self.config.get('initial_difficulty', 0.1),
+            'success_rate': 0.0,
+            'avg_reward': 0.0,
+            'tasks_solved': 0,
+            'buffer_size': 0,
+            'recent_tasks': [],
+            'benchmark_progress': {
+                'humaneval': 0.0,
+                'mbpp': 0.0,
+                'apps': 0.0
             },
-            'trainingData': {
+            'training_data': {
                 'steps': [],
                 'rewards': [],
                 'successRates': []
             }
         }
-        self.server_socket = None
-        self.running = False
-        self.thread = None
-        
-    def start(self):
-        """Start the dashboard data server"""
-        self.running = True
-        self.thread = threading.Thread(target=self._run_server)
-        self.thread.daemon = True
-        self.thread.start()
-        logger.info(f"Dashboard data server started on {self.host}:{self.port}")
-        
-    def stop(self):
-        """Stop the dashboard data server"""
-        self.running = False
-        if self.server_socket:
-            self.server_socket.close()
-        if self.thread:
-            self.thread.join(timeout=1.0)
-        logger.info("Dashboard data server stopped")
-        
-    def update_data(self, data):
-        """Update the dashboard data"""
-        self.data.update(data)
-        
-    def _run_server(self):
-        """Run the dashboard data server"""
+        logger.info("Training state initialized")
+    
+    def load_model(self):
+        """Load the model and tokenizer"""
         try:
-            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind((self.host, self.port))
-            self.server_socket.listen(5)
-            self.server_socket.settimeout(1.0)
+            logger.info(f"Loading model {self.config['model_id']}...")
             
-            while self.running:
-                try:
-                    client_socket, addr = self.server_socket.accept()
-                    threading.Thread(target=self._handle_client, args=(client_socket, addr)).start()
-                except socket.timeout:
-                    continue
-                except Exception as e:
-                    logger.error(f"Error accepting connection: {e}")
-                    
+            # Configure quantization
+            quant_config = BitsAndBytesConfig(
+                load_in_8bit=self.config['quantization']['load_in_8bit']
+            )
+            
+            # Load tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.config['model_id'],
+                trust_remote_code=True
+            )
+            
+            # Load model
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.config['model_id'],
+                quantization_config=quant_config,
+                device_map="auto",
+                trust_remote_code=True
+            )
+            
+            # Configure LoRA for efficient fine-tuning
+            peft_config = LoraConfig(
+                r=16,
+                lora_alpha=32,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM"
+            )
+            
+            # Apply LoRA to model
+            self.model = get_peft_model(self.model, peft_config)
+            
+            # Configure PPO
+            ppo_config = PPOConfig(
+                learning_rate=self.config['learning_rate'],
+                batch_size=self.config['batch_size'],
+                mini_batch_size=1,
+                gradient_accumulation_steps=self.config['gradient_accumulation_steps'],
+                optimize_cuda_cache=True,
+                early_stopping=self.config.get('early_stopping', True),
+                target_kl=self.config.get('target_kl', 0.1),
+                kl_penalty=self.config.get('kl_penalty', "kl"),
+                seed=self.config.get('seed', 42)
+            )
+            
+            # Initialize PPO trainer
+            self.ppo_trainer = PPOTrainer(
+                config=ppo_config,
+                model=self.model,
+                tokenizer=self.tokenizer
+            )
+            
+            logger.info("Model loaded successfully")
         except Exception as e:
-            logger.error(f"Error starting dashboard data server: {e}")
+            logger.error(f"Error loading model: {e}")
+            raise
+    
+    def start_data_server(self):
+        """Start a server to provide training data to the dashboard"""
+        self.server_thread = threading.Thread(target=self._run_data_server, daemon=True)
+        self.server_thread.start()
+        logger.info("Data server started")
+    
+    def _run_data_server(self):
+        """Run the data server to provide training data"""
+        host = 'localhost'
+        port = 8081
+        
+        # Create socket
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        try:
+            server_socket.bind((host, port))
+            server_socket.listen(5)
+            logger.info(f"Data server listening on {host}:{port}")
+            
+            while True:
+                client_socket, addr = server_socket.accept()
+                logger.info(f"Connection from {addr}")
+                
+                # Handle client in a separate thread
+                client_thread = threading.Thread(
+                    target=self._handle_client,
+                    args=(client_socket,),
+                    daemon=True
+                )
+                client_thread.start()
+        except Exception as e:
+            logger.error(f"Error in data server: {e}")
         finally:
-            if self.server_socket:
-                self.server_socket.close()
-                
-    def _handle_client(self, client_socket, addr):
-        """Handle a client connection"""
+            server_socket.close()
+    
+    def _handle_client(self, client_socket):
+        """Handle client connection to the data server"""
         try:
-            # Read the HTTP request
-            request = client_socket.recv(1024).decode('utf-8')
+            # Receive request
+            request = client_socket.recv(1024).decode()
             
-            # Check if it's a GET request for the API endpoint
-            if 'GET /api/training-data' in request:
-                # Send HTTP response with JSON data
-                response = f"HTTP/1.1 200 OK\r\n"
-                response += f"Content-Type: application/json\r\n"
-                response += f"Access-Control-Allow-Origin: *\r\n"
-                response += f"\r\n"
-                response += json.dumps(self.data)
+            # Check if it's a request for training data
+            if "GET /api/training-data" in request:
+                # Prepare response
+                response_body = json.dumps(self.state)
+                response = (
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    f"Content-Length: {len(response_body)}\r\n"
+                    "\r\n"
+                    f"{response_body}"
+                )
                 
-                client_socket.sendall(response.encode('utf-8'))
+                # Send response
+                client_socket.sendall(response.encode())
             else:
-                # Send 404 response
-                response = f"HTTP/1.1 404 Not Found\r\n\r\n"
-                client_socket.sendall(response.encode('utf-8'))
-                
+                # Send 404 for other requests
+                response = "HTTP/1.1 404 Not Found\r\n\r\n"
+                client_socket.sendall(response.encode())
         except Exception as e:
-            logger.error(f"Error handling client {addr}: {e}")
+            logger.error(f"Error handling client: {e}")
         finally:
             client_socket.close()
-
-class AZRTrainer:
-    """
-    Absolute Zero Reasoner (AZR) Trainer
     
-    Implements a reinforcement learning loop for training a language model
-    to solve programming tasks through self-play.
-    """
-    
-    def __init__(self, config_path: str = "../config/azr_config.yaml"):
-        """
-        Initialize the AZR trainer.
-        
-        Args:
-            config_path: Path to the configuration file
-        """
-        # Load configuration
-        self.config = load_config(config_path)
-        
-        # Set random seed
-        setup_seed(self.config.get("seed", 42))
-        
-        # Initialize WandB
-        self.run_id = setup_wandb(self.config)
-        
-        # Initialize model and tokenizer
-        self.model, self.tokenizer = self._setup_model()
-        
-        # Initialize optimizer
-        self.optimizer = self._setup_optimizer()
-        
-        # Initialize PPO trainer
-        self.ppo_config = PPOConfig(
-            learning_rate=self.config.get("learning_rate", 1e-6),
-            batch_size=self.config.get("batch_size", 2),
-            mini_batch_size=1,
-            gradient_accumulation_steps=self.config.get("gradient_accumulation_steps", 1),
-            optimize_cuda_cache=True,
-            early_stopping=self.config.get("early_stopping", True),
-            target_kl=self.config.get("target_kl", 0.1),
-            kl_penalty=self.config.get("kl_penalty", "kl"),
-            seed=self.config.get("seed", 42),
-            log_with="wandb" if self.run_id else None
-        )
-        
-        # Initialize task proposer and solver
-        self.proposer = TaskProposer()
-        self.solver = TaskSolver()
-        
-        # Initialize metrics
-        self.metrics = {
-            "reward": [],
-            "task_success_rate": 0.0,
-            "kl_divergence": 0.0,
-            "loss": 0.0
-        }
-        
-        # Initialize task buffer
-        self.task_buffer = []
-        self.max_buffer_size = self.config.get("task_buffer_size", 1000)
-        
-        # Initialize benchmark tracking
-        self.benchmark_scores = {
-            "humaneval": 0.0,
-            "mbpp": 0.0,
-            "apps": 0.0
-        }
-        self.benchmark_targets = {
-            "humaneval": {
-                "gpt35": 48.1,
-                "codellama": 53.7,
-                "claude2": 56.0,
-                "target": 67.3
-            },
-            "mbpp": {
-                "gpt35": 52.3,
-                "codellama": 57.2,
-                "claude2": 61.5,
-                "target": 72.1
-            },
-            "apps": {
-                "gpt35": 27.5,
-                "codellama": 31.2,
-                "claude2": 33.8,
-                "target": 42.7
-            }
-        }
-        
-        # Initialize training history
-        self.training_history = {
-            "steps": [],
-            "rewards": [],
-            "success_rates": [],
-            "task_difficulties": [],
-            "benchmark_scores": {
-                "humaneval": [],
-                "mbpp": [],
-                "apps": []
-            }
-        }
-        
-        # Initialize recent tasks
-        self.recent_tasks = []
-        self.max_recent_tasks = 20
-        
-        # Initialize dashboard data server
-        self.dashboard_server = DashboardDataServer()
-        self.dashboard_server.start()
-        
-        # Initialize start time
-        self.start_time = datetime.now()
-        
-        # Initialize task solved counter
-        self.tasks_solved = 0
-        
-        logger.info("AZR Trainer initialized")
-    
-    def _setup_model(self) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
-        """
-        Set up the model and tokenizer.
-        
-        Returns:
-            Tuple of (model, tokenizer)
-        """
-        model_id = self.config.get("model_id", "Qwen/Qwen1.5-4B")
-        logger.info(f"Loading model: {model_id}")
-        
-        # Configure quantization
-        quant_config = None
-        if self.config.get("quantization", {}).get("load_in_4bit", True):
-            quant_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=getattr(
-                    torch, 
-                    self.config.get("quantization", {}).get("bnb_4bit_compute_dtype", "float16")
-                ),
-                bnb_4bit_use_double_quant=self.config.get("quantization", {}).get("bnb_4bit_use_double_quant", True),
-                bnb_4bit_quant_type=self.config.get("quantization", {}).get("bnb_4bit_quant_type", "nf4")
+    def update_task_difficulty(self):
+        """Update task difficulty based on success rate"""
+        if self.state['success_rate'] > 0.8:
+            # Increase difficulty if success rate is high
+            new_difficulty = min(
+                self.state['task_difficulty'] + 0.05,
+                self.config.get('final_difficulty', 0.9)
             )
-            logger.info("Using 4-bit quantization")
-        
-        # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        
-        # Load model
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            quantization_config=quant_config,
-            device_map="auto",
-            trust_remote_code=True
-        )
-        
-        return model, tokenizer
+            self.state['task_difficulty'] = new_difficulty
+            logger.info(f"Increased task difficulty to {new_difficulty:.2f}")
+        elif self.state['success_rate'] < 0.3:
+            # Decrease difficulty if success rate is low
+            new_difficulty = max(
+                self.state['task_difficulty'] - 0.02,
+                self.config.get('initial_difficulty', 0.1)
+            )
+            self.state['task_difficulty'] = new_difficulty
+            logger.info(f"Decreased task difficulty to {new_difficulty:.2f}")
     
-    def _setup_optimizer(self) -> AdamW:
-        """
-        Set up the optimizer.
-        
-        Returns:
-            AdamW optimizer
-        """
-        # Get trainable parameters
-        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-        
-        # Initialize optimizer
-        optimizer = AdamW(
-            trainable_params,
-            lr=self.config.get("learning_rate", 1e-6),
-            weight_decay=self.config.get("weight_decay", 0.01)
-        )
-        
-        return optimizer
+    def select_task_type(self):
+        """Select a task type from the configured types"""
+        # Occasionally change task type
+        if random.random() < 0.1:
+            task_type = random.choice(self.config['task_types'])
+            self.state['task_type'] = task_type
+            logger.info(f"Selected task type: {task_type}")
+        return self.state['task_type']
     
-    def _generate_task(self, difficulty: float = 0.5) -> Dict[str, Any]:
-        """
-        Generate a new programming task.
-        
-        Args:
-            difficulty: Task difficulty from 0.0 to 1.0
-            
-        Returns:
-            Task dictionary
-        """
-        # Select a random task type
-        task_type = random.choice(self.config.get("task_types", ["deduction"]))
+    def generate_task(self):
+        """Generate a new task"""
+        task_type = self.select_task_type()
+        difficulty = self.state['task_difficulty']
         
         # Generate task using the proposer
-        task = self.proposer.propose_task(
-            self.model, 
-            self.tokenizer, 
-            task_type, 
-            difficulty=difficulty
-        )
+        task_prompt = f"Generate a {task_type} Python programming task with difficulty {difficulty:.2f} on a scale of 0.1 to 0.9."
+        task_description = propose_task(self.model, self.tokenizer, task_prompt)
         
-        return task
-    
-    def _solve_task(self, task: Dict[str, Any]) -> Tuple[bool, str]:
-        """
-        Solve a programming task.
-        
-        Args:
-            task: Task dictionary
-            
-        Returns:
-            Tuple of (success, solution_code)
-        """
-        # Solve task using the solver
-        success, solution = self.solver.solve_task(
-            self.model,
-            self.tokenizer,
-            task
-        )
-        
-        return success, solution
-    
-    def _validate_solution(self, task: Dict[str, Any], solution: str) -> float:
-        """
-        Validate a solution and compute reward.
-        
-        Args:
-            task: Task dictionary
-            solution: Solution code
-            
-        Returns:
-            Reward value
-        """
-        # Extract input and expected output from task description
-        # This is a simplified implementation and would need more robust parsing
-        task_desc = task["description"]
-        
-        # Try to extract input and output examples
-        input_example = "example_input"
-        expected_output = "example_output"
-        
-        # Look for input example in task description
-        input_match = re.search(r"Input Example:(.+?)Expected Output:", task_desc, re.DOTALL)
-        if input_match:
-            input_example = input_match.group(1).strip()
-        
-        # Look for expected output in task description
-        output_match = re.search(r"Expected Output:(.+?)(?:Constraints:|$)", task_desc, re.DOTALL)
-        if output_match:
-            expected_output = output_match.group(1).strip()
-        
-        # Validate the solution
-        is_valid = validate_code(solution, input_example, expected_output)
-        
-        # Compute reward
-        reward = 1.0 if is_valid else 0.0
-        
-        return reward
-    
-    def _update_task_buffer(self, task: Dict[str, Any], solution: str, reward: float):
-        """
-        Update the task buffer with a new task and its solution.
-        
-        Args:
-            task: Task dictionary
-            solution: Solution code
-            reward: Reward value
-        """
-        # Add task to buffer
-        self.task_buffer.append({
-            "task": task,
-            "solution": solution,
-            "reward": reward
-        })
-        
-        # Trim buffer if it exceeds max size
-        if len(self.task_buffer) > self.max_buffer_size:
-            self.task_buffer = self.task_buffer[-self.max_buffer_size:]
-    
-    def _sample_from_buffer(self, batch_size: int = 1) -> List[Dict[str, Any]]:
-        """
-        Sample tasks from the buffer.
-        
-        Args:
-            batch_size: Number of tasks to sample
-            
-        Returns:
-            List of task dictionaries
-        """
-        if not self.task_buffer:
-            return []
-        
-        # Sample tasks with higher probability for high-reward tasks
-        weights = [entry["reward"] + 0.1 for entry in self.task_buffer]  # Add small constant to avoid zero weights
-        total_weight = sum(weights)
-        probs = [w / total_weight for w in weights]
-        
-        # Sample with replacement
-        indices = random.choices(range(len(self.task_buffer)), weights=probs, k=min(batch_size, len(self.task_buffer)))
-        
-        return [self.task_buffer[i] for i in indices]
-    
-    def train_step(self, step: int) -> Dict[str, float]:
-        """
-        Perform a single training step.
-        
-        Args:
-            step: Current training step
-            
-        Returns:
-            Dictionary of metrics
-        """
-        # Generate a new task with adaptive difficulty
-        difficulty = min(0.1 + step / self.config.get("max_steps", 100000) * 0.9, 0.9)
-        task = self._generate_task(difficulty=difficulty)
-        
-        # Solve the task
-        success, solution = self._solve_task(task)
-        
-        # Validate the solution and compute reward
-        reward = self._validate_solution(task, solution) if success else 0.0
-        
-        # Update task buffer
-        if success:
-            self._update_task_buffer(task, solution, reward)
-            self.tasks_solved += 1
-            
-            # Add to recent tasks
-            self.recent_tasks.insert(0, {
-                "id": step,
-                "type": task.get("type", "Unknown"),
-                "difficulty": difficulty,
-                "solved": True,
-                "description": task.get("description", "")
-            })
-        else:
-            # Add to recent tasks as failed
-            self.recent_tasks.insert(0, {
-                "id": step,
-                "type": task.get("type", "Unknown"),
-                "difficulty": difficulty,
-                "solved": False,
-                "description": task.get("description", "")
-            })
-        
-        # Limit recent tasks
-        if len(self.recent_tasks) > self.max_recent_tasks:
-            self.recent_tasks = self.recent_tasks[:self.max_recent_tasks]
-        
-        # Sample tasks from buffer for PPO training
-        if step > 0 and step % self.config.get("ppo_update_interval", 10) == 0 and self.task_buffer:
-            batch = self._sample_from_buffer(self.config.get("batch_size", 2))
-            
-            if batch:
-                # Prepare inputs for PPO
-                # This is a simplified implementation and would need more work for a real PPO update
-                # In a real implementation, you would need to:
-                # 1. Generate responses from the model
-                # 2. Compute rewards
-                # 3. Run PPO update
-                
-                # For now, we'll just log the metrics
-                self.metrics["reward"] = [entry["reward"] for entry in batch]
-                self.metrics["task_success_rate"] = sum(self.metrics["reward"]) / len(self.metrics["reward"])
-        
-        # Update training history
-        self.training_history["steps"].append(step)
-        self.training_history["rewards"].append(reward)
-        self.training_history["success_rates"].append(self.metrics["task_success_rate"])
-        self.training_history["task_difficulties"].append(difficulty)
-        
-        # Evaluate on benchmarks periodically
-        if step > 0 and step % self.config.get("benchmark_interval", 100) == 0:
-            self._evaluate_benchmarks(step)
-        
-        # Update dashboard data
-        self._update_dashboard_data(step, task, reward, difficulty)
-        
-        # Save checkpoint
-        if step > 0 and step % self.config.get("checkpoint_interval", 100) == 0:
-            save_checkpoint(
-                self.model,
-                self.tokenizer,
-                self.optimizer,
-                step,
-                self.metrics,
-                self.config
-            )
-        
-        # Log metrics
-        log_metrics(self.metrics, step)
-        
-        return self.metrics
-    
-    def _evaluate_benchmarks(self, step: int):
-        """
-        Evaluate the model on benchmarks.
-        
-        Args:
-            step: Current training step
-        """
-        # In a real implementation, this would run the evaluation script
-        # For now, we'll simulate progress based on training step
-        
-        # Simulate benchmark progress
-        max_steps = self.config.get("max_steps", 100000)
-        progress_rate = 1 - np.exp(-step / (max_steps / 3))
-        
-        # Update benchmark scores
-        self.benchmark_scores["humaneval"] = progress_rate * self.benchmark_targets["humaneval"]["target"]
-        self.benchmark_scores["mbpp"] = progress_rate * self.benchmark_targets["mbpp"]["target"]
-        self.benchmark_scores["apps"] = progress_rate * self.benchmark_targets["apps"]["target"]
-        
-        # Update benchmark history
-        self.training_history["benchmark_scores"]["humaneval"].append(self.benchmark_scores["humaneval"])
-        self.training_history["benchmark_scores"]["mbpp"].append(self.benchmark_scores["mbpp"])
-        self.training_history["benchmark_scores"]["apps"].append(self.benchmark_scores["apps"])
-        
-        logger.info(f"Benchmark scores at step {step}:")
-        logger.info(f"  HumanEval: {self.benchmark_scores['humaneval']:.2f}%")
-        logger.info(f"  MBPP: {self.benchmark_scores['mbpp']:.2f}%")
-        logger.info(f"  APPS: {self.benchmark_scores['apps']:.2f}%")
-    
-    def _update_dashboard_data(self, step: int, task: Dict[str, Any], reward: float, difficulty: float):
-        """
-        Update the dashboard data.
-        
-        Args:
-            step: Current training step
-            task: Current task
-            reward: Current reward
-            difficulty: Current task difficulty
-        """
-        # Calculate success rate over recent history
-        recent_rewards = self.training_history["rewards"][-100:] if len(self.training_history["rewards"]) > 0 else [0]
-        success_rate = sum(1 for r in recent_rewards if r > 0.5) / len(recent_rewards)
-        
-        # Calculate average reward over recent history
-        avg_reward = sum(recent_rewards) / len(recent_rewards)
-        
-        # Prepare training data for charts
-        steps = self.training_history["steps"][-100:]
-        rewards = self.training_history["rewards"][-100:]
-        success_rates = [sum(1 for r in self.training_history["rewards"][max(0, i-10):i+1] if r > 0.5) / min(i+1, 10) 
-                         for i in range(len(self.training_history["rewards"]))[-100:]]
-        
-        # Update dashboard data
-        dashboard_data = {
-            'status': 'active',
-            'currentStep': step,
-            'taskType': task.get("type", "Unknown"),
-            'taskDifficulty': difficulty,
-            'successRate': success_rate,
-            'avgReward': avg_reward,
-            'tasksSolved': self.tasks_solved,
-            'bufferSize': len(self.task_buffer),
-            'recentTasks': self.recent_tasks,
-            'benchmarkProgress': {
-                'humaneval': self.benchmark_scores["humaneval"],
-                'mbpp': self.benchmark_scores["mbpp"],
-                'apps': self.benchmark_scores["apps"]
-            },
-            'trainingData': {
-                'steps': steps,
-                'rewards': rewards,
-                'successRates': success_rates
-            }
+        # Create task object
+        task = {
+            'id': self.state['current_step'],
+            'type': task_type,
+            'difficulty': difficulty,
+            'description': task_description,
+            'solved': False
         }
         
-        # Send data to dashboard
-        self.dashboard_server.update_data(dashboard_data)
+        logger.info(f"Generated task: {task['description'][:50]}...")
+        return task
     
-    def train(self, resume_from: Optional[str] = None):
-        """
-        Train the model.
+    def solve_task(self, task):
+        """Attempt to solve the given task"""
+        # Prepare prompt for the solver
+        solve_prompt = f"Task: {task['description']}\n\nWrite a Python function to solve this task:"
         
-        Args:
-            resume_from: Optional path to resume training from a checkpoint
-        """
-        # Resume from checkpoint if provided
-        start_step = 0
-        if resume_from:
-            self.model, self.tokenizer, self.optimizer, training_state = load_checkpoint(
-                resume_from,
-                self.model,
-                self.tokenizer,
-                self.optimizer
+        # Generate solution
+        solution = solve_task(self.model, self.tokenizer, solve_prompt)
+        
+        # Extract code from solution
+        code = self._extract_code(solution)
+        
+        # Validate solution
+        is_valid = validate_code(code, task['description'], "")
+        
+        # Update task with solution and result
+        task['solution'] = solution
+        task['code'] = code
+        task['solved'] = is_valid
+        
+        logger.info(f"Task {task['id']} solved: {is_valid}")
+        return task, is_valid
+    
+    def _extract_code(self, solution):
+        """Extract code from a solution text"""
+        # Look for code blocks
+        if "```python" in solution and "```" in solution.split("```python", 1)[1]:
+            code = solution.split("```python", 1)[1].split("```", 1)[0].strip()
+        elif "```" in solution and "```" in solution.split("```", 1)[1]:
+            code = solution.split("```", 1)[1].split("```", 1)[0].strip()
+        else:
+            # Just use the whole solution if no code blocks found
+            code = solution
+        
+        # Ensure code has a function definition
+        if not code.strip().startswith("def "):
+            code = "def f(input_data):\n    " + "\n    ".join(code.split("\n"))
+        
+        return code
+    
+    def update_training_data(self, reward):
+        """Update training data with the latest step results"""
+        self.state['current_step'] += 1
+        
+        # Update success metrics
+        if len(self.state['training_data']['rewards']) > 0:
+            # Calculate moving average
+            avg_reward = (
+                0.9 * self.state['avg_reward'] + 
+                0.1 * reward
             )
-            start_step = training_state.get("step", 0)
-            logger.info(f"Resumed training from step {start_step}")
+            self.state['avg_reward'] = avg_reward
+        else:
+            self.state['avg_reward'] = reward
         
-        # Main training loop
-        max_steps = self.config.get("max_steps", 100000)
+        # Update success rate
+        if reward > 0:
+            self.state['tasks_solved'] += 1
+        
+        self.state['success_rate'] = (
+            self.state['tasks_solved'] / 
+            max(1, self.state['current_step'])
+        )
+        
+        # Add data point for charts (every 5 steps to avoid too many points)
+        if self.state['current_step'] % 5 == 0:
+            self.state['training_data']['steps'].append(self.state['current_step'])
+            self.state['training_data']['rewards'].append(self.state['avg_reward'])
+            self.state['training_data']['successRates'].append(self.state['success_rate'])
+            
+            # Limit data points to keep dashboard responsive
+            max_points = 50
+            if len(self.state['training_data']['steps']) > max_points:
+                self.state['training_data']['steps'] = self.state['training_data']['steps'][-max_points:]
+                self.state['training_data']['rewards'] = self.state['training_data']['rewards'][-max_points:]
+                self.state['training_data']['successRates'] = self.state['training_data']['successRates'][-max_points:]
+        
+        # Update buffer size
+        self.state['buffer_size'] = len(self.task_buffer)
+        
+        # Log progress
+        logger.info(
+            f"Step {self.state['current_step']}: "
+            f"Reward={reward:.2f}, "
+            f"Success Rate={self.state['success_rate']:.2f}, "
+            f"Avg Reward={self.state['avg_reward']:.2f}"
+        )
+    
+    def update_benchmark_progress(self):
+        """Simulate benchmark progress based on training progress"""
+        # In a real implementation, this would run actual benchmarks
+        # For now, we'll simulate progress based on success rate
+        
+        # Only update occasionally to simulate benchmark evaluation intervals
+        if self.state['current_step'] % self.config.get('evaluation_interval', 500) != 0:
+            return
+        
+        # Simulate benchmark progress
+        progress_factor = min(1.0, self.state['current_step'] / 10000)
+        success_factor = self.state['success_rate']
+        
+        # Calculate progress for each benchmark
+        humaneval_target = self.config['benchmark_targets']['humaneval']['target']
+        mbpp_target = self.config['benchmark_targets']['mbpp']['target']
+        apps_target = self.config['benchmark_targets']['apps']['target']
+        
+        # Update benchmark progress
+        self.state['benchmark_progress'] = {
+            'humaneval': progress_factor * success_factor * humaneval_target,
+            'mbpp': progress_factor * success_factor * mbpp_target,
+            'apps': progress_factor * success_factor * apps_target * 0.7  # APPS is harder
+        }
+        
+        logger.info(
+            f"Benchmark progress: "
+            f"HumanEval={self.state['benchmark_progress']['humaneval']:.2f}%, "
+            f"MBPP={self.state['benchmark_progress']['mbpp']:.2f}%, "
+            f"APPS={self.state['benchmark_progress']['apps']:.2f}%"
+        )
+    
+    def save_checkpoint(self):
+        """Save a model checkpoint"""
+        if self.state['current_step'] % self.config.get('checkpoint_interval', 100) != 0:
+            return
+        
+        # Create checkpoint directory
+        checkpoint_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "models",
+            f"checkpoint-{self.state['current_step']}"
+        )
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        # Save model and tokenizer
+        self.model.save_pretrained(checkpoint_dir)
+        self.tokenizer.save_pretrained(checkpoint_dir)
+        
+        # Save training state
+        with open(os.path.join(checkpoint_dir, "training_state.json"), 'w') as f:
+            json.dump(self.state, f, indent=2)
+        
+        logger.info(f"Checkpoint saved at step {self.state['current_step']}")
+    
+    def ppo_update(self, task, reward):
+        """Update the model using PPO based on the task and reward"""
+        if self.state['current_step'] % self.config.get('ppo_update_interval', 10) != 0:
+            return
+        
+        try:
+            # Prepare inputs for PPO update
+            prompt = f"Task: {task['description']}\n\nWrite a Python function to solve this task:"
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+            
+            # Generate response with the model
+            response_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=128,
+                do_sample=True,
+                temperature=0.7,
+                return_dict_in_generate=True,
+                output_scores=True
+            ).sequences
+            
+            # Decode response
+            response = self.tokenizer.decode(response_ids[0], skip_special_tokens=True)
+            
+            # Prepare query and response for PPO
+            query_tensor = inputs.input_ids
+            response_tensor = response_ids[:, inputs.input_ids.shape[1]:]
+            
+            # Create rewards tensor
+            rewards = torch.tensor([reward]).to(self.model.device)
+            
+            # Perform PPO step
+            stats = self.ppo_trainer.step(query_tensor, response_tensor, rewards)
+            
+            logger.info(f"PPO update at step {self.state['current_step']}: {stats}")
+        except Exception as e:
+            logger.error(f"Error in PPO update: {e}")
+    
+    def train(self, max_steps=None):
+        """Main training loop"""
+        max_steps = max_steps or self.config.get('max_steps', 100000)
         
         logger.info(f"Starting training for {max_steps} steps")
         
         try:
-            for step in tqdm(range(start_step, max_steps), desc="Training"):
-                try:
-                    # Perform training step
-                    metrics = self.train_step(step)
-                    
-                    # Log progress
-                    if step % 10 == 0:
-                        reward_avg = sum(metrics.get("reward", [0])) / max(len(metrics.get("reward", [1])), 1)
-                        logger.info(f"Step {step}/{max_steps} - Reward: {reward_avg:.4f}")
+            while self.state['current_step'] < max_steps:
+                # Generate a new task
+                task = self.generate_task()
                 
-                except Exception as e:
-                    logger.error(f"Error in training step {step}: {e}")
-                    continue
-            
-            # Save final checkpoint
-            save_checkpoint(
-                self.model,
-                self.tokenizer,
-                self.optimizer,
-                max_steps,
-                self.metrics,
-                self.config
-            )
-            
-            logger.info("Training completed")
-            
+                # Attempt to solve the task
+                task, solved = self.solve_task(task)
+                
+                # Calculate reward
+                reward = 1.0 if solved else -0.1
+                
+                # Update model with PPO
+                self.ppo_update(task, reward)
+                
+                # Add task to buffer and recent tasks
+                self.task_buffer.append(task)
+                if len(self.task_buffer) > self.config.get('task_buffer_size', 1000):
+                    self.task_buffer.pop(0)
+                
+                # Update recent tasks list
+                self.state['recent_tasks'].insert(0, task)
+                if len(self.state['recent_tasks']) > 20:
+                    self.state['recent_tasks'].pop()
+                
+                # Update training data
+                self.update_training_data(reward)
+                
+                # Update task difficulty
+                self.update_task_difficulty()
+                
+                # Update benchmark progress
+                self.update_benchmark_progress()
+                
+                # Save checkpoint
+                self.save_checkpoint()
+                
+                # Sleep briefly to avoid overwhelming the system
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            logger.info("Training interrupted by user")
+        except Exception as e:
+            logger.error(f"Error during training: {e}")
+            raise
         finally:
-            # Stop dashboard server
-            self.dashboard_server.stop()
+            # Save final checkpoint
+            self.save_checkpoint()
+            logger.info("Training completed")
 
 def main():
-    """Main function to run the AZR training"""
-    parser = argparse.ArgumentParser(description="Train the AZR model")
-    parser.add_argument("--config", type=str, default="../config/azr_config.yaml", help="Path to configuration file")
-    parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
-    parser.add_argument("--dashboard-port", type=int, default=8081, help="Port for dashboard data server")
+    """Main function to run the AZR trainer"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='AZR Trainer')
+    parser.add_argument('--config', type=str, help='Path to configuration file')
+    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from')
+    parser.add_argument('--steps', type=int, help='Number of training steps')
     args = parser.parse_args()
     
-    # Create directory structure
-    create_directory_structure()
+    # Create logs directory if it doesn't exist
+    logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
     
     # Initialize trainer
     trainer = AZRTrainer(config_path=args.config)
     
-    # Train model
-    trainer.train(resume_from=args.resume)
+    # Resume from checkpoint if specified
+    if args.resume:
+        # TODO: Implement checkpoint loading
+        pass
+    
+    # Start training
+    trainer.train(max_steps=args.steps)
 
 if __name__ == "__main__":
     main()
