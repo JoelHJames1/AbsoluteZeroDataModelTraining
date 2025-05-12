@@ -138,7 +138,7 @@ export const DataProvider = ({ children }) => {
     return () => {
       newSocket.disconnect();
     };
-  }, [socket]);
+  }, [socket, checkMilestones]);
 
   // Fetch dashboard configuration
   const fetchConfig = useCallback(async () => {
@@ -148,6 +148,7 @@ export const DataProvider = ({ children }) => {
     } catch (error) {
       console.error('Error fetching dashboard configuration:', error);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Check for milestone achievements
