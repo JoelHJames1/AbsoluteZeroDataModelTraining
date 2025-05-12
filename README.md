@@ -60,25 +60,37 @@ cd ../..
 
 ### Usage
 
-#### Start Training
+#### Start Training with Dashboard
 
-To start training with the simple dashboard:
+To start training with the modern React dashboard:
 ```bash
 cd azr
-./run.sh --dashboard
+./run_training_with_dashboard.sh
 ```
 
-#### Modern Dashboard
+This will:
+1. Start the AZR training process
+2. Start the Flask API server on port 5000
+3. Start the React development server on port 3000
 
-To use the modern React dashboard:
+You can customize the training with options:
+```bash
+cd azr
+./run_training_with_dashboard.sh --steps 20000 --config custom_config.yaml
+```
+
+Options:
+- `--steps <number>`: Number of training steps (default: 10000)
+- `--config <path>`: Path to configuration file (default: config/azr_config.yaml)
+- `--resume <path>`: Path to checkpoint to resume from
+
+#### Dashboard Only
+
+If you just want to run the dashboard without training:
 ```bash
 cd azr
 ./run_dashboard.sh
 ```
-
-This will start:
-- Flask API server on port 5000
-- React development server on port 3000
 
 #### Evaluation
 
