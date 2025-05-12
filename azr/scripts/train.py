@@ -128,17 +128,33 @@ class AZRTrainer:
             quant_config = None
             if 'quantization' in self.config:
                 quant_params = self.config['quantization']
-                if 'load_in_8bit' in quant_params and quant_params['load_in_8bit']:
-                    quant_config = BitsAndBytesConfig(
-                        load_in_8bit=True
-                    )
+                # Skip quantization if explicitly disabled
+                if 'enabled' in quant_params and not quant_params['enabled']:
+                    logger.info("Quantization is disabled in config")
+                    quant_config = None
+                # 8-bit quantization
+                elif 'load_in_8bit' in quant_params and quant_params['load_in_8bit']:
+                    try:
+                        quant_config = BitsAndBytesConfig(
+                            load_in_8bit=True
+                        )
+                        logger.info("Using 8-bit quantization")
+                    except ImportError:
+                        logger.warning("bitsandbytes not available, disabling quantization")
+                        quant_config = None
+                # 4-bit quantization
                 elif 'load_in_4bit' in quant_params and quant_params['load_in_4bit']:
-                    quant_config = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_compute_dtype=getattr(torch, quant_params.get('bnb_4bit_compute_dtype', 'float16')),
-                        bnb_4bit_use_double_quant=quant_params.get('bnb_4bit_use_double_quant', True),
-                        bnb_4bit_quant_type=quant_params.get('bnb_4bit_quant_type', 'nf4')
-                    )
+                    try:
+                        quant_config = BitsAndBytesConfig(
+                            load_in_4bit=True,
+                            bnb_4bit_compute_dtype=getattr(torch, quant_params.get('bnb_4bit_compute_dtype', 'float16')),
+                            bnb_4bit_use_double_quant=quant_params.get('bnb_4bit_use_double_quant', True),
+                            bnb_4bit_quant_type=quant_params.get('bnb_4bit_quant_type', 'nf4')
+                        )
+                        logger.info("Using 4-bit quantization")
+                    except ImportError:
+                        logger.warning("bitsandbytes not available, disabling quantization")
+                        quant_config = None
             
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(

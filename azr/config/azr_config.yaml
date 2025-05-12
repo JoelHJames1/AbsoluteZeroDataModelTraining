@@ -4,11 +4,14 @@
 
 # Model Configuration
 model_id: "Qwen/Qwen3-4B"  # Model ID from Hugging Face or local path
+# Disable quantization to avoid bitsandbytes dependency
 quantization:
-  load_in_4bit: true  # Using 4-bit quantization instead of 8-bit
-  bnb_4bit_compute_dtype: "float16"
-  bnb_4bit_use_double_quant: true
-  bnb_4bit_quant_type: "nf4"
+  enabled: false
+  # Uncomment below to use quantization with bitsandbytes
+  # load_in_4bit: true
+  # bnb_4bit_compute_dtype: "float16"
+  # bnb_4bit_use_double_quant: true
+  # bnb_4bit_quant_type: "nf4"
 
 # Training Configuration
 learning_rate: 1.0e-6
