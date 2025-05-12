@@ -100,6 +100,50 @@ export const DataProvider = ({ children }) => {
     }
   });
 
+  // Check for milestone achievements
+  const checkMilestones = useCallback((benchmarkProgress) => {
+    setMilestones(prev => {
+      const newMilestones = { ...prev };
+      
+      // Check each benchmark
+      Object.entries(benchmarkProgress).forEach(([benchmark, value]) => {
+        // Check each target
+        if (value >= config.benchmarkTargets[benchmark].gpt35 && !prev[benchmark].gpt35) {
+          newMilestones[benchmark].gpt35 = true;
+          console.log(`Milestone achieved: ${benchmark} surpassed GPT-3.5 (${config.benchmarkTargets[benchmark].gpt35}%)`);
+        }
+        
+        if (value >= config.benchmarkTargets[benchmark].codellama && !prev[benchmark].codellama) {
+          newMilestones[benchmark].codellama = true;
+          console.log(`Milestone achieved: ${benchmark} surpassed CodeLlama (${config.benchmarkTargets[benchmark].codellama}%)`);
+        }
+        
+        if (value >= config.benchmarkTargets[benchmark].claude2 && !prev[benchmark].claude2) {
+          newMilestones[benchmark].claude2 = true;
+          console.log(`Milestone achieved: ${benchmark} surpassed Claude 2 (${config.benchmarkTargets[benchmark].claude2}%)`);
+        }
+        
+        if (value >= config.benchmarkTargets[benchmark].azrTarget && !prev[benchmark].target) {
+          newMilestones[benchmark].target = true;
+          console.log(`Milestone achieved: ${benchmark} reached target (${config.benchmarkTargets[benchmark].azrTarget}%)`);
+        }
+      });
+      
+      return newMilestones;
+    });
+  }, [config.benchmarkTargets]);
+
+  // Fetch dashboard configuration
+  const fetchConfig = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/config`);
+      setConfig(response.data);
+    } catch (error) {
+      console.error('Error fetching dashboard configuration:', error);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Connect to Socket.IO server
   const connectToSocket = useCallback(() => {
     // Disconnect existing socket if any
@@ -139,50 +183,6 @@ export const DataProvider = ({ children }) => {
       newSocket.disconnect();
     };
   }, [socket, checkMilestones]);
-
-  // Fetch dashboard configuration
-  const fetchConfig = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/config`);
-      setConfig(response.data);
-    } catch (error) {
-      console.error('Error fetching dashboard configuration:', error);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Check for milestone achievements
-  const checkMilestones = useCallback((benchmarkProgress) => {
-    setMilestones(prev => {
-      const newMilestones = { ...prev };
-      
-      // Check each benchmark
-      Object.entries(benchmarkProgress).forEach(([benchmark, value]) => {
-        // Check each target
-        if (value >= config.benchmarkTargets[benchmark].gpt35 && !prev[benchmark].gpt35) {
-          newMilestones[benchmark].gpt35 = true;
-          console.log(`Milestone achieved: ${benchmark} surpassed GPT-3.5 (${config.benchmarkTargets[benchmark].gpt35}%)`);
-        }
-        
-        if (value >= config.benchmarkTargets[benchmark].codellama && !prev[benchmark].codellama) {
-          newMilestones[benchmark].codellama = true;
-          console.log(`Milestone achieved: ${benchmark} surpassed CodeLlama (${config.benchmarkTargets[benchmark].codellama}%)`);
-        }
-        
-        if (value >= config.benchmarkTargets[benchmark].claude2 && !prev[benchmark].claude2) {
-          newMilestones[benchmark].claude2 = true;
-          console.log(`Milestone achieved: ${benchmark} surpassed Claude 2 (${config.benchmarkTargets[benchmark].claude2}%)`);
-        }
-        
-        if (value >= config.benchmarkTargets[benchmark].azrTarget && !prev[benchmark].target) {
-          newMilestones[benchmark].target = true;
-          console.log(`Milestone achieved: ${benchmark} reached target (${config.benchmarkTargets[benchmark].azrTarget}%)`);
-        }
-      });
-      
-      return newMilestones;
-    });
-  }, [config.benchmarkTargets]);
 
   // Fetch initial data and configuration on mount
   useEffect(() => {
