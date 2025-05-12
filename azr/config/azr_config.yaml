@@ -3,10 +3,12 @@
 # Current Date: 2025-05-11
 
 # Model Configuration
-model_id: "Qwen/Qwen1.5-4B"  # Model ID from Hugging Face or local path
+model_id: "Qwen/Qwen3-4B"  # Model ID from Hugging Face or local path
 quantization:
-  load_in_8bit: true  # Changed from 4-bit to 8-bit for better compatibility
-  # Removed 4-bit specific parameters
+  load_in_4bit: true  # Using 4-bit quantization instead of 8-bit
+  bnb_4bit_compute_dtype: "float16"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_quant_type: "nf4"
 
 # Training Configuration
 learning_rate: 1.0e-6

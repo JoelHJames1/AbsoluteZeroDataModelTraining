@@ -125,9 +125,20 @@ class AZRTrainer:
             logger.info(f"Loading model {self.config['model_id']}...")
             
             # Configure quantization
-            quant_config = BitsAndBytesConfig(
-                load_in_8bit=self.config['quantization']['load_in_8bit']
-            )
+            quant_config = None
+            if 'quantization' in self.config:
+                quant_params = self.config['quantization']
+                if 'load_in_8bit' in quant_params and quant_params['load_in_8bit']:
+                    quant_config = BitsAndBytesConfig(
+                        load_in_8bit=True
+                    )
+                elif 'load_in_4bit' in quant_params and quant_params['load_in_4bit']:
+                    quant_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=getattr(torch, quant_params.get('bnb_4bit_compute_dtype', 'float16')),
+                        bnb_4bit_use_double_quant=quant_params.get('bnb_4bit_use_double_quant', True),
+                        bnb_4bit_quant_type=quant_params.get('bnb_4bit_quant_type', 'nf4')
+                    )
             
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
