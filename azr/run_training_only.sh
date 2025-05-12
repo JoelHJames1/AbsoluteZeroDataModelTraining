@@ -65,6 +65,9 @@ if [ "$UPDATE_TRANSFORMERS" = true ]; then
   echo "Updating Transformers library..."
   pip install --upgrade transformers
   
+  echo "Updating bitsandbytes library..."
+  pip install --upgrade bitsandbytes
+  
   echo "Do you want to install Transformers from source for the latest features? (y/n)"
   read -r response
   if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
